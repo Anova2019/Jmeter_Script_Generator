@@ -148,14 +148,34 @@
     background-color: #2563eb;
 }
 
+.jro-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.jro-btn-warning {
+    background-color: #f59e0b;
+    color: #1e293b;
+    flex: 1;
+}
+
+.jro-btn-warning:hover {
+    background-color: #d97706;
+}
+
 .jro-btn-danger {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    width: 100%;
-    padding: 8px;
+    background-color: #ef4444;
+    color: white;
+    flex: 1;
 }
 
 .jro-btn-danger:hover {
-    background-color: rgba(239, 68, 68, 0.2);
+    background-color: #dc2626;
+}
+
+.jro-status-dot.paused {
+    background-color: #f59e0b;
+    box-shadow: 0 0 8px #f59e0b;
+    animation: none;
 }

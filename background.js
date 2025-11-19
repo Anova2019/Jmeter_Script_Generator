@@ -1,37 +1,39 @@
 let isRecording = false;
+let isPaused = false;
 let recordedRequests = [];
 let startTime = 0;
 let excludeStatic = true;
 let limitDomain = false;
+let includePattern = "";
 let currentStep = 'Init';
 let recordingTabId = null;
 let rootDomain = null;
+let uniqueDomains = new Set();
 
 importScripts('jmx_converter.js');
 
 // Restore state on startup
-chrome.storage.local.get(['isRecording', 'startTime', 'requests', 'excludeStatic', 'limitDomain', 'currentStep', 'recordingTabId', 'rootDomain'], (result) => {
+chrome.storage.local.get([
+    'isRecording', 'isPaused', 'startTime', 'requests',
+    'excludeStatic', 'limitDomain', 'includePattern',
+    'currentStep', 'recordingTabId', 'rootDomain', 'uniqueDomains'
+], (result) => {
     if (result.isRecording) {
         isRecording = true;
         startTime = result.startTime;
         recordingTabId = result.recordingTabId;
         rootDomain = result.rootDomain;
     }
-    if (result.requests) {
-        recordedRequests = result.requests;
-    }
-    if (result.excludeStatic !== undefined) {
-        excludeStatic = result.excludeStatic;
-    }
-    if (result.limitDomain !== undefined) {
-        limitDomain = result.limitDomain;
-    }
-    if (result.currentStep) {
-        currentStep = result.currentStep;
-    }
+    if (result.isPaused !== undefined) isPaused = result.isPaused;
+    if (result.requests) recordedRequests = result.requests;
+    if (result.excludeStatic !== undefined) excludeStatic = result.excludeStatic;
+    if (result.limitDomain !== undefined) limitDomain = result.limitDomain;
+    if (result.includePattern !== undefined) includePattern = result.includePattern;
+    if (result.currentStep) currentStep = result.currentStep;
+    if (result.uniqueDomains) uniqueDomains = new Set(result.uniqueDomains);
 });
 
-// Listen for messages from popup or content script
+// Listen for messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message.action) {
         case 'startRecording':
@@ -41,6 +43,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'stopRecording':
             stopRecording();
             sendResponse({ success: true });
+            break;
+        case 'togglePause':
+            togglePause();
+            sendResponse({ success: true, isPaused: isPaused });
             break;
         case 'resetRecording':
             resetRecording();
@@ -57,28 +63,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'getRecordingState':
             sendResponse({
                 isRecording,
+                isPaused,
                 startTime,
                 requestCount: recordedRequests.length,
                 currentStep
             });
             break;
     }
-    return true; // Keep channel open for async response
+    return true;
 });
 
 // Listen for storage changes
 chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'local') {
-        if (changes.excludeStatic) {
-            excludeStatic = changes.excludeStatic.newValue;
-        }
-        if (changes.limitDomain) {
-            limitDomain = changes.limitDomain.newValue;
-        }
+        if (changes.excludeStatic) excludeStatic = changes.excludeStatic.newValue;
+        if (changes.limitDomain) limitDomain = changes.limitDomain.newValue;
+        if (changes.includePattern) includePattern = changes.includePattern.newValue;
     }
 });
 
-// Re-inject UI on tab update (navigation)
+// Re-inject UI on tab update
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (isRecording && tabId === recordingTabId && changeInfo.status === 'complete') {
         chrome.tabs.sendMessage(tabId, {
@@ -86,9 +90,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             state: {
                 startTime,
                 requestCount: recordedRequests.length,
-                currentStep
+                currentStep,
+                isPaused
             }
-        }).catch(() => { }); // Ignore if content script not ready
+        }).catch(() => { });
     }
 });
 
@@ -99,28 +104,23 @@ function startRecording() {
         const tab = tabs[0];
         recordingTabId = tab.id;
         isRecording = true;
+        isPaused = false;
         startTime = Date.now();
         currentStep = 'Init';
+        uniqueDomains.clear();
 
-        // Capture root domain
         try {
             const url = new URL(tab.url);
             rootDomain = url.hostname;
+            uniqueDomains.add(rootDomain);
         } catch (e) {
             rootDomain = null;
         }
 
-        chrome.storage.local.set({
-            isRecording: true,
-            startTime: startTime,
-            currentStep: currentStep,
-            recordingTabId: recordingTabId,
-            rootDomain: rootDomain
-        });
-
+        saveState();
         updateBadge();
 
-        // Programmatically inject content script if needed (for existing tabs)
+        // Inject Content Script
         chrome.scripting.executeScript({
             target: { tabId: recordingTabId },
             files: ['content.js']
@@ -129,13 +129,10 @@ function startRecording() {
                 target: { tabId: recordingTabId },
                 files: ['content.css']
             });
-        }).catch(() => {
-            // Script might already be there or cannot inject (e.g. chrome:// pages)
-        }).finally(() => {
-            // Show floating UI
+        }).catch(() => { }).finally(() => {
             chrome.tabs.sendMessage(recordingTabId, {
                 action: 'showFloatingUI',
-                state: { startTime, requestCount: 0, currentStep }
+                state: { startTime, requestCount: 0, currentStep, isPaused: false }
             }).catch(() => { });
         });
     });
@@ -143,30 +140,38 @@ function startRecording() {
 
 function stopRecording() {
     isRecording = false;
-    chrome.storage.local.set({ isRecording: false });
+    isPaused = false;
+    chrome.storage.local.set({ isRecording: false, isPaused: false });
     updateBadge();
 
-    // Hide floating UI
     if (recordingTabId) {
         chrome.tabs.sendMessage(recordingTabId, { action: 'hideFloatingUI' }).catch(() => { });
     }
 }
 
+function togglePause() {
+    isPaused = !isPaused;
+    chrome.storage.local.set({ isPaused: isPaused });
+    updateBadge();
+
+    if (recordingTabId) {
+        chrome.tabs.sendMessage(recordingTabId, {
+            action: 'updatePauseState',
+            isPaused: isPaused
+        }).catch(() => { });
+    }
+}
+
 function resetRecording() {
     isRecording = false;
+    isPaused = false;
     recordedRequests = [];
     currentStep = 'Init';
     recordingTabId = null;
     rootDomain = null;
+    uniqueDomains.clear();
 
-    chrome.storage.local.set({
-        isRecording: false,
-        requests: [],
-        requestCount: 0,
-        currentStep: currentStep,
-        recordingTabId: null,
-        rootDomain: null
-    });
+    saveState();
     updateBadge();
 }
 
@@ -174,7 +179,6 @@ function setStep(name) {
     currentStep = name;
     chrome.storage.local.set({ currentStep: name });
 
-    // Update Content Script UI
     if (recordingTabId) {
         chrome.tabs.sendMessage(recordingTabId, {
             action: 'updateStep',
@@ -182,35 +186,49 @@ function setStep(name) {
         }).catch(() => { });
     }
 
-    // Update Popup UI (if open)
     chrome.runtime.sendMessage({
         action: 'updateStep',
         stepName: name
     }).catch(() => { });
 }
 
+function saveState() {
+    chrome.storage.local.set({
+        isRecording,
+        isPaused,
+        startTime,
+        currentStep,
+        recordingTabId,
+        rootDomain,
+        requests: recordedRequests,
+        requestCount: recordedRequests.length,
+        uniqueDomains: Array.from(uniqueDomains)
+    });
+}
+
 function updateBadge() {
     if (isRecording) {
-        chrome.action.setBadgeText({ text: 'REC' });
-        chrome.action.setBadgeBackgroundColor({ color: '#EF4444' });
+        if (isPaused) {
+            chrome.action.setBadgeText({ text: '||' });
+            chrome.action.setBadgeBackgroundColor({ color: '#F59E0B' }); // Amber
+        } else {
+            chrome.action.setBadgeText({ text: 'REC' });
+            chrome.action.setBadgeBackgroundColor({ color: '#EF4444' }); // Red
+        }
     } else {
         chrome.action.setBadgeText({ text: '' });
     }
 }
 
 // Web Request Listener
-const filter = { urls: ["<all_urls>"] };
-const extraInfoSpec = ["requestHeaders", "extraHeaders"];
-
 let pendingRequests = new Map();
 
 chrome.webRequest.onBeforeRequest.addListener(
     (details) => {
-        if (!isRecording) return;
-        if (recordingTabId && details.tabId !== recordingTabId) return; // Filter by Tab ID
+        if (!isRecording || isPaused) return;
+        if (recordingTabId && details.tabId !== recordingTabId) return;
         if (shouldExclude(details.url)) return;
 
-        // Store request body and basic info
         pendingRequests.set(details.requestId, {
             url: details.url,
             method: details.method,
@@ -225,8 +243,8 @@ chrome.webRequest.onBeforeRequest.addListener(
 
 chrome.webRequest.onBeforeSendHeaders.addListener(
     (details) => {
-        if (!isRecording) return;
-        if (recordingTabId && details.tabId !== recordingTabId) return; // Filter by Tab ID
+        if (!isRecording || isPaused) return;
+        if (recordingTabId && details.tabId !== recordingTabId) return;
 
         const req = pendingRequests.get(details.requestId);
         if (req) {
@@ -234,18 +252,34 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
             recordedRequests.push(req);
             pendingRequests.delete(details.requestId);
 
+            // Track Domain
+            try {
+                const hostname = new URL(req.url).hostname;
+                uniqueDomains.add(hostname);
+            } catch (e) { }
+
             // Update stats
             const count = recordedRequests.length;
-            chrome.runtime.sendMessage({ action: 'updateStats', count: count }).catch(() => { });
+            const domainCount = uniqueDomains.size;
+
+            const stats = {
+                action: 'updateStats',
+                count: count,
+                domainCount: domainCount
+            };
+
+            chrome.runtime.sendMessage(stats).catch(() => { });
 
             if (recordingTabId) {
-                chrome.tabs.sendMessage(recordingTabId, {
-                    action: 'updateStats',
-                    count: count
-                }).catch(() => { });
+                chrome.tabs.sendMessage(recordingTabId, stats).catch(() => { });
             }
 
-            chrome.storage.local.set({ requestCount: count });
+            chrome.storage.local.set({
+                requestCount: count,
+                domainCount: domainCount,
+                requests: recordedRequests, // Persist requests
+                uniqueDomains: Array.from(uniqueDomains)
+            });
         }
     },
     { urls: ["<all_urls>"] },
@@ -253,27 +287,33 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
 );
 
 function shouldExclude(url) {
-    if (!excludeStatic && !limitDomain) return false; // No filters active
+    if (!excludeStatic && !limitDomain && !includePattern) return false;
 
     const urlObj = new URL(url);
 
     // Static Asset Filter
     if (excludeStatic) {
-        const staticExtensions = /\.(css|jpg|jpeg|png|gif|ico|woff|woff2|ttf|eot|svg|js|map)$/i;
+        const staticExtensions = /\.(css|jpg|jpeg|png|gif|ico|woff|woff2|ttf|eot|svg|js|map|json)$/i;
         if (staticExtensions.test(urlObj.pathname)) return true;
     }
 
     // Domain Filter
     if (limitDomain && rootDomain) {
-        // Check if hostname ends with rootDomain (handles subdomains)
-        // e.g. root=example.com, host=api.example.com -> MATCH
-        // e.g. root=example.com, host=google.com -> NO MATCH
         if (!urlObj.hostname.endsWith(rootDomain)) {
             return true;
         }
     }
 
-    // Exclude chrome extension internal calls
+    // Regex Include Pattern
+    if (includePattern) {
+        try {
+            const regex = new RegExp(includePattern);
+            if (!regex.test(url)) return true; // Exclude if doesn't match pattern
+        } catch (e) {
+            // Invalid regex, ignore
+        }
+    }
+
     if (url.startsWith('chrome-extension://')) return true;
 
     return false;

@@ -15,6 +15,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'updateStep':
             updateStepDisplay(message.stepName);
             break;
+        case 'updatePauseState':
+            updatePauseState(message.isPaused);
+            break;
     }
 });
 
@@ -26,7 +29,7 @@ function createOverlay(state) {
     div.innerHTML = `
         <div class="jro-header" id="jro-drag-handle">
             <div class="jro-title">
-                <span class="jro-status-dot"></span>
+                <span class="jro-status-dot ${state.isPaused ? 'paused' : ''}" id="jro-dot"></span>
                 JMeter Recorder
             </div>
         </div>
@@ -52,14 +55,21 @@ function createOverlay(state) {
                 </div>
             </div>
 
-            <button id="jro-stop" class="jro-btn jro-btn-danger">Stop Recording</button>
+            <div class="jro-actions">
+                <button id="jro-pause" class="jro-btn jro-btn-warning">${state.isPaused ? 'Resume' : 'Pause'}</button>
+                <button id="jro-stop" class="jro-btn jro-btn-danger">Stop</button>
+            </div>
         </div>
     `;
 
     document.body.appendChild(div);
 
     // Initialize Timer
-    startTimer(state.startTime);
+    if (!state.isPaused) {
+        startTimer(state.startTime);
+    } else {
+        document.getElementById('jro-timer').textContent = "PAUSED";
+    }
 
     // Event Listeners
     document.getElementById('jro-add-step').addEventListener('click', addStep);
@@ -70,6 +80,10 @@ function createOverlay(state) {
     document.getElementById('jro-stop').addEventListener('click', () => {
         chrome.runtime.sendMessage({ action: 'stopRecording' });
         removeOverlay();
+    });
+
+    document.getElementById('jro-pause').addEventListener('click', () => {
+        chrome.runtime.sendMessage({ action: 'togglePause' });
     });
 
     // Drag Logic
@@ -90,6 +104,26 @@ function updateStats(count) {
 function updateStepDisplay(name) {
     const el = document.getElementById('jro-step');
     if (el) el.textContent = name;
+}
+
+function updatePauseState(isPaused) {
+    const dot = document.getElementById('jro-dot');
+    const btn = document.getElementById('jro-pause');
+    const timerEl = document.getElementById('jro-timer');
+
+    if (isPaused) {
+        if (dot) dot.classList.add('paused');
+        if (btn) btn.textContent = 'Resume';
+        if (timerEl) timerEl.textContent = "PAUSED";
+        if (timerInterval) clearInterval(timerInterval);
+    } else {
+        if (dot) dot.classList.remove('paused');
+        if (btn) btn.textContent = 'Pause';
+        // Restart timer (simplified)
+        chrome.storage.local.get(['startTime'], (res) => {
+            if (res.startTime) startTimer(res.startTime);
+        });
+    }
 }
 
 function addStep() {
