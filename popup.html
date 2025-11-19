@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JMeter Recorder</title>
+    <link rel="stylesheet" href="popup.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>JMeter Recorder</h1>
+            <div class="status-badge" id="statusBadge">
+                <span class="status-dot"></span>
+                <span id="statusText">Idle</span>
+            </div>
+        </header>
+
+        <main>
+            <div class="controls">
+                <button id="startBtn" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+                    </svg>
+                    Start Recording
+                </button>
+                <button id="stopBtn" class="btn btn-danger" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="6" y="6" width="12" height="12" fill="currentColor"></rect>
+                    </svg>
+                    Stop
+                </button>
+            </div>
+
+            <div class="stats-panel">
+                <div class="stat-item">
+                    <span class="stat-label">Requests Captured</span>
+                    <span class="stat-value" id="requestCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Duration</span>
+                    <span class="stat-value" id="timer">00:00</span>
+                </div>
+            </div>
+
+            <div class="step-section">
+                <div class="current-step-badge">
+                    <span class="step-label">Current Step:</span>
+                    <span id="currentStepDisplay" class="step-name">Init</span>
+                </div>
+                <div class="step-controls">
+                    <input type="text" id="stepNameInput" placeholder="Next Step Name..." class="step-input" disabled>
+                    <button id="addStepBtn" class="btn btn-secondary" disabled>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M12 5v14M5 12h14"></path>
+                        </svg>
+                        Add Step
+                    </button>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button id="resetBtn" class="btn btn-secondary">Reset</button>
+                <button id="exportBtn" class="btn btn-success" disabled>Download JMX</button>
+            </div>
+
+            <div class="filter-section">
+                <label class="checkbox-container">
+                    <input type="checkbox" id="excludeStatic" checked>
+                    <span class="checkmark"></span>
+                    Exclude Static Assets (css, images, etc.)
+                </label>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by Jmeter Script Generator</p>
+        </footer>
+    </div>
+    <script src="popup.js"></script>
+</body>
+
+</html>
