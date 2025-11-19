@@ -1,16 +1,18 @@
-importScripts('jmx_converter.js');
-
 let isRecording = false;
 let recordedRequests = [];
 let startTime = 0;
 let excludeStatic = true;
 let currentStep = 'Init';
+let recordingTabId = null;
+
+importScripts('jmx_converter.js');
 
 // Restore state on startup
-chrome.storage.local.get(['isRecording', 'startTime', 'requests', 'excludeStatic', 'currentStep'], (result) => {
+chrome.storage.local.get(['isRecording', 'startTime', 'requests', 'excludeStatic', 'currentStep', 'recordingTabId'], (result) => {
     if (result.isRecording) {
         isRecording = true;
         startTime = result.startTime;
+        recordingTabId = result.recordingTabId;
     }
     if (result.requests) {
         recordedRequests = result.requests;
@@ -23,7 +25,7 @@ chrome.storage.local.get(['isRecording', 'startTime', 'requests', 'excludeStatic
     }
 });
 
-// Listen for messages from popup
+// Listen for messages from popup or content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message.action) {
         case 'startRecording':
@@ -46,44 +48,88 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const jmx = generateJMX(recordedRequests);
             sendResponse({ jmxContent: jmx });
             break;
+        case 'getRecordingState':
+            sendResponse({
+                isRecording,
+                startTime,
+                requestCount: recordedRequests.length,
+                currentStep
+            });
+            break;
     }
     return true; // Keep channel open for async response
 });
 
-// Listen for storage changes (e.g. excludeStatic toggle)
+// Listen for storage changes
 chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'local' && changes.excludeStatic) {
         excludeStatic = changes.excludeStatic.newValue;
     }
 });
 
+// Re-inject UI on tab update (navigation)
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (isRecording && tabId === recordingTabId && changeInfo.status === 'complete') {
+        chrome.tabs.sendMessage(tabId, {
+            action: 'showFloatingUI',
+            state: {
+                startTime,
+                requestCount: recordedRequests.length,
+                currentStep
+            }
+        }).catch(() => { }); // Ignore if content script not ready
+    }
+});
+
 function startRecording() {
-    isRecording = true;
-    startTime = Date.now();
-    currentStep = 'Init';
-    chrome.storage.local.set({
-        isRecording: true,
-        startTime: startTime,
-        currentStep: currentStep
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) return;
+
+        recordingTabId = tabs[0].id;
+        isRecording = true;
+        startTime = Date.now();
+        currentStep = 'Init';
+
+        chrome.storage.local.set({
+            isRecording: true,
+            startTime: startTime,
+            currentStep: currentStep,
+            recordingTabId: recordingTabId
+        });
+
+        updateBadge();
+
+        // Show floating UI
+        chrome.tabs.sendMessage(recordingTabId, {
+            action: 'showFloatingUI',
+            state: { startTime, requestCount: 0, currentStep }
+        }).catch(() => { });
     });
-    updateBadge();
 }
 
 function stopRecording() {
     isRecording = false;
     chrome.storage.local.set({ isRecording: false });
     updateBadge();
+
+    // Hide floating UI
+    if (recordingTabId) {
+        chrome.tabs.sendMessage(recordingTabId, { action: 'hideFloatingUI' }).catch(() => { });
+    }
 }
 
 function resetRecording() {
     isRecording = false;
     recordedRequests = [];
     currentStep = 'Init';
+    recordingTabId = null;
+
     chrome.storage.local.set({
         isRecording: false,
         requests: [],
         requestCount: 0,
-        currentStep: currentStep
+        currentStep: currentStep,
+        recordingTabId: null
     });
     updateBadge();
 }
@@ -91,6 +137,14 @@ function resetRecording() {
 function setStep(name) {
     currentStep = name;
     chrome.storage.local.set({ currentStep: name });
+
+    // Update UI
+    if (recordingTabId) {
+        chrome.tabs.sendMessage(recordingTabId, {
+            action: 'updateStep',
+            stepName: name
+        }).catch(() => { });
+    }
 }
 
 function updateBadge() {
@@ -104,21 +158,14 @@ function updateBadge() {
 
 // Web Request Listener
 const filter = { urls: ["<all_urls>"] };
-const extraInfoSpec = ["requestHeaders", "extraHeaders"]; // 'requestBody' is needed for onBeforeRequest
-
-// We need two listeners:
-// 1. onBeforeRequest to get the body and initialize the request object
-// 2. onBeforeSendHeaders to get the headers (which happen after onBeforeRequest)
-
-// Actually, we can just capture onBeforeSendHeaders and try to match with onBeforeRequest data, 
-// OR just use onBeforeRequest if we don't strictly need headers (but we do for JMX).
-// The issue is linking them. RequestId is unique.
+const extraInfoSpec = ["requestHeaders", "extraHeaders"];
 
 let pendingRequests = new Map();
 
 chrome.webRequest.onBeforeRequest.addListener(
     (details) => {
         if (!isRecording) return;
+        if (recordingTabId && details.tabId !== recordingTabId) return; // Filter by Tab ID
         if (shouldExclude(details.url)) return;
 
         // Store request body and basic info
@@ -127,7 +174,7 @@ chrome.webRequest.onBeforeRequest.addListener(
             method: details.method,
             timeStamp: details.timeStamp,
             requestBody: details.requestBody,
-            step: currentStep // Tag with current step
+            step: currentStep
         });
     },
     { urls: ["<all_urls>"] },
@@ -137,38 +184,31 @@ chrome.webRequest.onBeforeRequest.addListener(
 chrome.webRequest.onBeforeSendHeaders.addListener(
     (details) => {
         if (!isRecording) return;
+        if (recordingTabId && details.tabId !== recordingTabId) return; // Filter by Tab ID
 
         const req = pendingRequests.get(details.requestId);
         if (req) {
             req.requestHeaders = details.requestHeaders;
-
-            // We consider the request "captured" at this point for simplicity, 
-            // though we could wait for onCompleted to get response status.
-            // For JMX generation, we mainly need the request details.
             recordedRequests.push(req);
             pendingRequests.delete(details.requestId);
 
-            // Update storage/UI periodically or on every request
-            // To avoid too many writes, maybe throttle this? 
-            // For now, let's just send a message to popup if open
-            chrome.runtime.sendMessage({
-                action: 'updateStats',
-                count: recordedRequests.length
-            }).catch(() => { }); // Ignore error if popup is closed
+            // Update stats
+            const count = recordedRequests.length;
+            chrome.runtime.sendMessage({ action: 'updateStats', count: count }).catch(() => { });
 
-            // Update storage count
-            chrome.storage.local.set({
-                requestCount: recordedRequests.length,
-                // requests: recordedRequests // Optional: save all requests to storage (careful with size)
-            });
+            if (recordingTabId) {
+                chrome.tabs.sendMessage(recordingTabId, {
+                    action: 'updateStats',
+                    count: count
+                }).catch(() => { });
+            }
+
+            chrome.storage.local.set({ requestCount: count });
         }
     },
     { urls: ["<all_urls>"] },
     ["requestHeaders", "extraHeaders"]
 );
-
-// Clean up pending requests that never completed (optional)
-// ...
 
 function shouldExclude(url) {
     if (!excludeStatic) return false;

@@ -1,0 +1,161 @@
+/* Floating UI Styles */
+#jmeter-recorder-overlay {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 280px;
+    background-color: #1e293b;
+    color: #f8fafc;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    font-family: 'Inter', sans-serif;
+    z-index: 2147483647;
+    /* Max z-index */
+    border: 1px solid #334155;
+    overflow: hidden;
+    transition: opacity 0.3s ease;
+    user-select: none;
+}
+
+#jmeter-recorder-overlay.hidden {
+    display: none;
+}
+
+.jro-header {
+    padding: 12px 16px;
+    background: linear-gradient(to right, #1e293b, #0f172a);
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move;
+    /* Indicates draggable */
+}
+
+.jro-title {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #60a5fa;
+}
+
+.jro-status-dot {
+    width: 8px;
+    height: 8px;
+    background-color: #ef4444;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #ef4444;
+    animation: jro-pulse 1.5s infinite;
+}
+
+@keyframes jro-pulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+.jro-content {
+    padding: 16px;
+}
+
+.jro-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.jro-stat-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.jro-stat-label {
+    font-size: 10px;
+    color: #94a3b8;
+    text-transform: uppercase;
+}
+
+.jro-stat-value {
+    font-size: 18px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.jro-step-section {
+    background-color: #0f172a;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.jro-current-step {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+
+.jro-step-name {
+    color: #3b82f6;
+    font-weight: 600;
+}
+
+.jro-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.jro-input {
+    flex: 1;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    outline: none;
+}
+
+.jro-input:focus {
+    border-color: #3b82f6;
+}
+
+.jro-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.jro-btn-primary {
+    background-color: #3b82f6;
+    color: white;
+}
+
+.jro-btn-primary:hover {
+    background-color: #2563eb;
+}
+
+.jro-btn-danger {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    width: 100%;
+    padding: 8px;
+}
+
+.jro-btn-danger:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+}
