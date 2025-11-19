@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusBadge = document.getElementById('statusBadge');
     const statusText = document.getElementById('statusText');
     const excludeStatic = document.getElementById('excludeStatic');
+    const limitDomain = document.getElementById('limitDomain');
 
     // Step controls
     const stepNameInput = document.getElementById('stepNameInput');
@@ -17,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let timerInterval;
 
     // Initialize UI based on stored state
-    chrome.storage.local.get(['isRecording', 'startTime', 'requestCount', 'excludeStatic', 'currentStep'], (result) => {
+    chrome.storage.local.get(['isRecording', 'startTime', 'requestCount', 'excludeStatic', 'limitDomain', 'currentStep'], (result) => {
         if (result.isRecording) {
             setRecordingState(true);
             startTimer(result.startTime);
@@ -34,6 +35,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (result.excludeStatic !== undefined) {
             excludeStatic.checked = result.excludeStatic;
+        }
+
+        if (result.limitDomain !== undefined) {
+            limitDomain.checked = result.limitDomain;
         }
 
         if (result.currentStep) {
@@ -81,6 +86,10 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.set({ excludeStatic: e.target.checked });
     });
 
+    limitDomain.addEventListener('change', (e) => {
+        chrome.storage.local.set({ limitDomain: e.target.checked });
+    });
+
     // Step Management
     addStepBtn.addEventListener('click', () => {
         const stepName = stepNameInput.value.trim();
@@ -107,6 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (message.count > 0 && !startBtn.disabled) { // If stopped and has requests
                 exportBtn.disabled = false;
             }
+        } else if (message.action === 'updateStep') {
+            currentStepDisplay.textContent = message.stepName;
         }
     });
 

@@ -2,23 +2,29 @@ let isRecording = false;
 let recordedRequests = [];
 let startTime = 0;
 let excludeStatic = true;
+let limitDomain = false;
 let currentStep = 'Init';
 let recordingTabId = null;
+let rootDomain = null;
 
 importScripts('jmx_converter.js');
 
 // Restore state on startup
-chrome.storage.local.get(['isRecording', 'startTime', 'requests', 'excludeStatic', 'currentStep', 'recordingTabId'], (result) => {
+chrome.storage.local.get(['isRecording', 'startTime', 'requests', 'excludeStatic', 'limitDomain', 'currentStep', 'recordingTabId', 'rootDomain'], (result) => {
     if (result.isRecording) {
         isRecording = true;
         startTime = result.startTime;
         recordingTabId = result.recordingTabId;
+        rootDomain = result.rootDomain;
     }
     if (result.requests) {
         recordedRequests = result.requests;
     }
     if (result.excludeStatic !== undefined) {
         excludeStatic = result.excludeStatic;
+    }
+    if (result.limitDomain !== undefined) {
+        limitDomain = result.limitDomain;
     }
     if (result.currentStep) {
         currentStep = result.currentStep;
@@ -62,8 +68,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Listen for storage changes
 chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local' && changes.excludeStatic) {
-        excludeStatic = changes.excludeStatic.newValue;
+    if (namespace === 'local') {
+        if (changes.excludeStatic) {
+            excludeStatic = changes.excludeStatic.newValue;
+        }
+        if (changes.limitDomain) {
+            limitDomain = changes.limitDomain.newValue;
+        }
     }
 });
 
@@ -85,25 +96,48 @@ function startRecording() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
 
-        recordingTabId = tabs[0].id;
+        const tab = tabs[0];
+        recordingTabId = tab.id;
         isRecording = true;
         startTime = Date.now();
         currentStep = 'Init';
+
+        // Capture root domain
+        try {
+            const url = new URL(tab.url);
+            rootDomain = url.hostname;
+        } catch (e) {
+            rootDomain = null;
+        }
 
         chrome.storage.local.set({
             isRecording: true,
             startTime: startTime,
             currentStep: currentStep,
-            recordingTabId: recordingTabId
+            recordingTabId: recordingTabId,
+            rootDomain: rootDomain
         });
 
         updateBadge();
 
-        // Show floating UI
-        chrome.tabs.sendMessage(recordingTabId, {
-            action: 'showFloatingUI',
-            state: { startTime, requestCount: 0, currentStep }
-        }).catch(() => { });
+        // Programmatically inject content script if needed (for existing tabs)
+        chrome.scripting.executeScript({
+            target: { tabId: recordingTabId },
+            files: ['content.js']
+        }).then(() => {
+            chrome.scripting.insertCSS({
+                target: { tabId: recordingTabId },
+                files: ['content.css']
+            });
+        }).catch(() => {
+            // Script might already be there or cannot inject (e.g. chrome:// pages)
+        }).finally(() => {
+            // Show floating UI
+            chrome.tabs.sendMessage(recordingTabId, {
+                action: 'showFloatingUI',
+                state: { startTime, requestCount: 0, currentStep }
+            }).catch(() => { });
+        });
     });
 }
 
@@ -123,13 +157,15 @@ function resetRecording() {
     recordedRequests = [];
     currentStep = 'Init';
     recordingTabId = null;
+    rootDomain = null;
 
     chrome.storage.local.set({
         isRecording: false,
         requests: [],
         requestCount: 0,
         currentStep: currentStep,
-        recordingTabId: null
+        recordingTabId: null,
+        rootDomain: null
     });
     updateBadge();
 }
@@ -138,13 +174,19 @@ function setStep(name) {
     currentStep = name;
     chrome.storage.local.set({ currentStep: name });
 
-    // Update UI
+    // Update Content Script UI
     if (recordingTabId) {
         chrome.tabs.sendMessage(recordingTabId, {
             action: 'updateStep',
             stepName: name
         }).catch(() => { });
     }
+
+    // Update Popup UI (if open)
+    chrome.runtime.sendMessage({
+        action: 'updateStep',
+        stepName: name
+    }).catch(() => { });
 }
 
 function updateBadge() {
@@ -211,12 +253,25 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
 );
 
 function shouldExclude(url) {
-    if (!excludeStatic) return false;
+    if (!excludeStatic && !limitDomain) return false; // No filters active
 
-    // Simple regex for static assets
-    const staticExtensions = /\.(css|jpg|jpeg|png|gif|ico|woff|woff2|ttf|eot|svg|js|map)$/i;
     const urlObj = new URL(url);
-    if (staticExtensions.test(urlObj.pathname)) return true;
+
+    // Static Asset Filter
+    if (excludeStatic) {
+        const staticExtensions = /\.(css|jpg|jpeg|png|gif|ico|woff|woff2|ttf|eot|svg|js|map)$/i;
+        if (staticExtensions.test(urlObj.pathname)) return true;
+    }
+
+    // Domain Filter
+    if (limitDomain && rootDomain) {
+        // Check if hostname ends with rootDomain (handles subdomains)
+        // e.g. root=example.com, host=api.example.com -> MATCH
+        // e.g. root=example.com, host=google.com -> NO MATCH
+        if (!urlObj.hostname.endsWith(rootDomain)) {
+            return true;
+        }
+    }
 
     // Exclude chrome extension internal calls
     if (url.startsWith('chrome-extension://')) return true;
