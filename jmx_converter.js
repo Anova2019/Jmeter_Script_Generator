@@ -193,6 +193,24 @@ function createGlobalConfig(commonHeaders) {
     `;
 }
 
+function createTransactionController(group, domainMap, commonHeaders, previousTimestamp) {
+  let samplers = '';
+
+  group.requests.forEach((req, index) => {
+    samplers += createHTTPSampler(req, domainMap, commonHeaders);
+  });
+
+  return `
+        <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="${escapeXml(group.name)}" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+          <boolProp name="TransactionController.parent">true</boolProp>
+        </TransactionController>
+        <hashTree>
+            ${samplers}
+        </hashTree>
+    `;
+}
+
 function createHTTPSampler(req, domainMap, commonHeaders) {
   let url;
   try {
