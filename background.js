@@ -57,8 +57,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ success: true });
             break;
         case 'getJMX':
-            const jmx = generateJMX(recordedRequests);
-            sendResponse({ jmxContent: jmx });
+            try {
+                const jmx = generateJMX(recordedRequests);
+                sendResponse({ jmxContent: jmx });
+            } catch (e) {
+                console.error("JMX Generation Error:", e);
+                sendResponse({ error: "Failed to generate JMX: " + e.message });
+            }
             break;
         case 'getRecordingState':
             sendResponse({

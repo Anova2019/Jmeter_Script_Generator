@@ -194,7 +194,14 @@ function createGlobalConfig(commonHeaders) {
 }
 
 function createHTTPSampler(req, domainMap, commonHeaders) {
-  const url = new URL(req.url);
+  let url;
+  try {
+    url = new URL(req.url);
+  } catch (e) {
+    console.warn("Invalid URL:", req.url);
+    return ''; // Skip invalid URLs
+  }
+
   const protocol = url.protocol.replace(':', '');
   const domain = url.hostname;
   const port = url.port; // Leave empty if default
@@ -211,11 +218,29 @@ function createHTTPSampler(req, domainMap, commonHeaders) {
   // Handle POST Body
   if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
     if (req.requestBody) {
-      if (req.requestBody.raw) {
+      if (req.requestBody.raw && req.requestBody.raw.length > 0) {
         // Raw Body (JSON, etc)
-        const rawData = req.requestBody.raw[0].bytes
-          ? new TextDecoder().decode(new Uint8Array(req.requestBody.raw[0].bytes))
-          : (req.requestBody.raw[0].file || '');
+        let rawData = '';
+        const rawObj = req.requestBody.raw[0];
+
+        if (rawObj.bytes) {
+          try {
+            // Check if bytes is an ArrayBuffer or similar
+            if (rawObj.bytes instanceof ArrayBuffer) {
+              rawData = new TextDecoder().decode(new Uint8Array(rawObj.bytes));
+            } else if (typeof rawObj.bytes === 'object' && Object.keys(rawObj.bytes).length === 0) {
+              // Empty object from storage deserialization of ArrayBuffer
+              rawData = '';
+            } else {
+              // Fallback or unexpected type
+              rawData = '';
+            }
+          } catch (e) {
+            console.warn("Failed to decode raw body bytes", e);
+          }
+        } else if (rawObj.file) {
+          rawData = rawObj.file;
+        }
 
         argumentsXml = `
                 <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
@@ -327,8 +352,8 @@ function createHTTPSampler(req, domainMap, commonHeaders) {
 }
 
 function escapeXml(unsafe) {
-  if (!unsafe) return '';
-  return unsafe.replace(/[<>&'"]/g, function (c) {
+  if (unsafe === null || unsafe === undefined) return '';
+  return String(unsafe).replace(/[<>&'"]/g, function (c) {
     switch (c) {
       case '<': return '&lt;';
       case '>': return '&gt;';

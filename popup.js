@@ -113,6 +113,10 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.runtime.sendMessage({ action: 'getJMX' }, (response) => {
             if (response && response.jmxContent) {
                 downloadJMX(response.jmxContent, testNameInput.value.trim());
+            } else if (response && response.error) {
+                alert("Error generating JMX: " + response.error);
+            } else {
+                alert("Unknown error generating JMX");
             }
         });
     });
