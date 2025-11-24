@@ -189,48 +189,6 @@ function createGlobalConfig(commonHeaders) {
         <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" enabled="true">
           <collectionProp name="Arguments.arguments"/>
         </elementProp>
-        <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp>
-      </ConfigTestElement>
-      <hashTree/>`;
-}
-
-function createTransactionController(group, domainMap, commonHeaders, previousTimestamp) {
-  let samplers = '';
-  let lastReqTime = previousTimestamp;
-
-  group.requests.forEach((req, index) => {
-    // Calculate Think Time
-    const thinkTime = req.timeStamp - lastReqTime;
-    lastReqTime = req.timeStamp;
-
-    let timerXml = '';
-    if (thinkTime > 0) {
-      // Add a small random deviation
-      const delay = Math.max(0, thinkTime);
-      const range = 100.0; // 100ms random range
-
-      timerXml = `
-            <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="Uniform Random Timer" enabled="true">
-              <stringProp name="ConstantTimer.delay">${delay}</stringProp>
-              <doubleProp>
-                <name>RandomTimer.range</name>
-                <value>${range}</value>
-                <savedValue>0.0</savedValue>
-              </doubleProp>
-            </UniformRandomTimer>
-            <hashTree/>`;
-    }
-
-    samplers += createHTTPSampler(req, domainMap, commonHeaders) + timerXml;
-  });
-
-  return `
-        <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="${escapeXml(group.name)}" enabled="true">
-          <boolProp name="TransactionController.includeTimers">false</boolProp>
-          <boolProp name="TransactionController.parent">true</boolProp>
-        </TransactionController>
-        <hashTree>
-            ${samplers}
         </hashTree>
     `;
 }
