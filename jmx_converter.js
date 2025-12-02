@@ -248,6 +248,9 @@ function createHTTPSampler(req, domainMap, commonHeaders) {
             // Check if bytes is an ArrayBuffer or similar
             if (rawObj.bytes instanceof ArrayBuffer) {
               rawData = new TextDecoder().decode(new Uint8Array(rawObj.bytes));
+            } else if (Array.isArray(rawObj.bytes)) {
+              // Handle sanitized array from background.js
+              rawData = new TextDecoder().decode(new Uint8Array(rawObj.bytes));
             } else if (typeof rawObj.bytes === 'object' && Object.keys(rawObj.bytes).length === 0) {
               // Empty object from storage deserialization of ArrayBuffer
               rawData = '';

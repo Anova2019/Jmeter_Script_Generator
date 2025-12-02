@@ -254,7 +254,10 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
         const req = pendingRequests.get(details.requestId);
         if (req) {
             req.requestHeaders = details.requestHeaders;
-            recordedRequests.push(req);
+
+            // Sanitize request to ensure JSON serializability (handle ArrayBuffers)
+            const sanitizedReq = sanitizeRequest(req);
+            recordedRequests.push(sanitizedReq);
             pendingRequests.delete(details.requestId);
 
             // Track Domain
@@ -322,4 +325,20 @@ function shouldExclude(url) {
     if (url.startsWith('chrome-extension://')) return true;
 
     return false;
+}
+
+function sanitizeRequest(req) {
+    const cleanReq = { ...req };
+    if (cleanReq.requestBody && cleanReq.requestBody.raw) {
+        cleanReq.requestBody = { ...cleanReq.requestBody };
+        cleanReq.requestBody.raw = cleanReq.requestBody.raw.map(part => {
+            if (part.bytes) {
+                // Convert ArrayBuffer to regular Array for JSON serialization
+                // ArrayBuffer is not directly JSON serializable and can cause issues in storage/messaging
+                return { ...part, bytes: Array.from(new Uint8Array(part.bytes)) };
+            }
+            return part;
+        });
+    }
+    return cleanReq;
 }

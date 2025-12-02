@@ -5,6 +5,7 @@
     "description": "Record user actions and convert them to JMeter (JMX) scripts.",
     "permissions": [
         "storage",
+        "unlimitedStorage",
         "webRequest",
         "debugger",
         "tabs",
