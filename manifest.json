@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "JMeter Script Generator",
+    "name": "Neo JMeter Script Recorder",
     "version": "1.0",
     "description": "Record user actions and convert them to JMeter (JMX) scripts.",
     "permissions": [

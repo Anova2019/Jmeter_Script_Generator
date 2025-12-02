@@ -1,4 +1,4 @@
-# JMeter Script Generator Chrome Extension
+# Neo JMeter Script Recorder Chrome Extension
 
 This Chrome extension allows you to record your browser interactions and export them as a JMeter (.jmx) test plan.
 
